@@ -30,3 +30,16 @@ org.ops4j.pax.jdbc:pax-jdbc-config:0.6.0
 com.h2database:h2:1.4.192
 org.apache.servicemix.bundles:org.apache.servicemix.bundles.jasypt:1.9.2_1
 org.mariadb.jdbc:mariadb-java-client:1.4.5
+# Needed for Hibernate
+org.apache.geronimo.specs:geronimo-jta_1.1_spec:1.1.1
+org.apache.servicemix.bundles:org.apache.servicemix.bundles.antlr:2.7.7_5
+org.apache.servicemix.bundles:org.apache.servicemix.bundles.dom4j:1.6.1_5
+org.javassist:javassist:3.18.1-GA
+org.jboss.logging:jboss-logging:3.3.0.Final
+org.jboss:jandex:2.0.0.Final
+org.hibernate.common:hibernate-commons-annotations:5.0.1.Final
+org.hibernate:hibernate-core:5.0.9.Final
+org.hibernate:hibernate-osgi:5.0.9.Final
+org.hibernate:hibernate-entitymanager:5.0.9.Final
+#Aries JPA
+org.apache.aries.jpa:org.apache.aries.jpa.container:2.5.0-SNAPSHOT

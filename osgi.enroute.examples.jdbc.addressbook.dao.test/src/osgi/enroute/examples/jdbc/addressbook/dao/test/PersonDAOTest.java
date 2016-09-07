@@ -46,6 +46,8 @@ public class PersonDAOTest extends JDBCExampleBase {
 
     DataSourceFactory dataSourceFactory;
 
+	PersonDao personDao;
+
     public PersonDAOTest() throws Exception{
         super();
     }
@@ -58,8 +60,13 @@ public class PersonDAOTest extends JDBCExampleBase {
 
         assertNotNull(configAdmin);
 
-        localJDBCProviderConfig = configAdmin.createFactoryConfiguration(FACTORY_PID_ARIES_TX_CONTROL_JDBC_LOCAL,null);
-        localJDBCProviderConfig.update((Hashtable)txServiceProps);
+        localJPAProviderConfig = configAdmin.createFactoryConfiguration(FACTORY_PID_ARIES_TX_CONTROL_JPA_LOCAL,null);
+        localJPAProviderConfig.update((Hashtable)txServiceProps);
+
+        personDaoTracker = new ServiceTracker<>(context, PersonDao.class, null);
+        personDaoTracker.open();
+        personDao = personDaoTracker.waitForService(5000);
+        assertNotNull(personDao);
 
         Filter dsfFilter = FrameworkUtil.createFilter("(&("+
                 Constants.OBJECTCLASS + "="+DataSourceFactory.class.getName()+")"
@@ -74,12 +81,10 @@ public class PersonDAOTest extends JDBCExampleBase {
         Properties dsProps = new Properties();
         dsProps.load(this.getClass().getResourceAsStream("/ds.properties"));
 
-        Connection con = dataSourceFactory.createDataSource(dsProps).getConnection();
+        try(Connection con = dataSourceFactory.createDataSource(dsProps).getConnection()) {
+        	createTestTables(con);
+        }
 
-        createTestTables(con);
-
-        personDaoTracker = new ServiceTracker<>(context, PersonDao.class, null);
-        personDaoTracker.open();
 
     }
 
@@ -89,35 +94,18 @@ public class PersonDAOTest extends JDBCExampleBase {
 
         Statement st = connection.createStatement();
 
-        st.execute("CREATE TABLE IF NOT EXISTS PERSONS("
-                + "PERSON_ID INT PRIMARY KEY AUTO_INCREMENT, "
-                + "FIRST_NAME VARCHAR(30),"
-                + "LAST_NAME VARCHAR(30)"
-                + ")");
-
         st.execute("INSERT INTO PERSONS VALUES (1001,'Tom','Cat');"
                 + "INSERT INTO PERSONS VALUES (1002,'Jerry','Mouse');"
                 + "INSERT INTO PERSONS VALUES (1003,'Mickey','Mouse');"
                 + "INSERT INTO PERSONS VALUES (1004,'Donald','Duck');");
 
-        st.execute("CREATE TABLE IF NOT EXISTS PERSON_ADDRESSES("
-                + "EMAIL_ADDRESS VARCHAR(100) PRIMARY KEY,"
-                + "PERSON_ID INT NOT NULL,"
-                + "CITY VARCHAR(100),"
-                + "COUNTRY VARCHAR(3)"
-                + ")");
-
-        st.execute("INSERT INTO PERSON_ADDRESSES VALUES ('tom.cat@example.com',1001,'Palo Alto','US');"
-                + "INSERT INTO PERSON_ADDRESSES VALUES ('jerry@example.com',1002,'Palo Alto','US');"
-                + "INSERT INTO PERSON_ADDRESSES VALUES ('jerry.mouse@example.com',1002,'Palo Alto','US');");
+        st.execute("INSERT INTO PERSON_ADDRESSES (EMAIL_ADDRESS,PERSON_ID,CITY,COUNTRY) VALUES ('tom.cat@example.com',1001,'Palo Alto','US');"
+                + "INSERT INTO PERSON_ADDRESSES (EMAIL_ADDRESS,PERSON_ID,CITY,COUNTRY) VALUES ('jerry@example.com',1002,'Palo Alto','US');"
+                + "INSERT INTO PERSON_ADDRESSES (EMAIL_ADDRESS,PERSON_ID,CITY,COUNTRY) VALUES ('jerry.mouse@example.com',1002,'Palo Alto','US');");
     }
 
     @Test
     public void testSelectAll() throws Exception {
-
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-        assertNotNull(personDao);
-
         List<PersonDTO> persons =  personDao.select();
         assertFalse(persons.isEmpty());
         assertTrue(4 == persons.size());
@@ -126,19 +114,14 @@ public class PersonDAOTest extends JDBCExampleBase {
     @Test
     public void testSave() throws Exception{
 
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-
-        assertNotNull(personDao);
-
         PersonDTO person = new PersonDTO();
         person.firstName="Pluto";
         person.lastName="Dog";
-        person.personId=1005;
 
-        personDao.save(person);
+        Long key = personDao.save(person);
 
-        PersonDTO expected =  personDao.findByPK(1005l);
-        assertEquals(1005,expected.personId);
+        PersonDTO expected =  personDao.findByPK(key);
+        assertEquals(key.longValue(),expected.personId);
         assertEquals("Pluto",expected.firstName);
         assertEquals("Dog",expected.lastName);
     }
@@ -146,19 +129,13 @@ public class PersonDAOTest extends JDBCExampleBase {
     @Test
     public void testSaveWithAddress() throws Exception {
 
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-
         ArrayList<AddressDTO> addresses = new ArrayList<>();
-
-        assertNotNull(personDao);
 
         PersonDTO person = new PersonDTO();
         person.firstName="Pluto";
         person.lastName="Dog";
-        person.personId=1005;
 
         AddressDTO addressDTO = new AddressDTO();
-        addressDTO.personId=1005;
         addressDTO.emailAddress="pluto@example.com";
         addressDTO.city="Orlando";
         addressDTO.country="US";
@@ -166,10 +143,10 @@ public class PersonDAOTest extends JDBCExampleBase {
 
         person.addresses=addresses;
 
-        personDao.save(person);
+        Long key = personDao.save(person);
 
-        PersonDTO expected =  personDao.findByPK(1005l);
-        assertEquals(1005,expected.personId);
+        PersonDTO expected =  personDao.findByPK(key);
+        assertEquals(key.longValue(),expected.personId);
         assertEquals("Pluto",expected.firstName);
         assertEquals("Dog",expected.lastName);
         assertEquals(1,expected.addresses.size());
@@ -178,25 +155,19 @@ public class PersonDAOTest extends JDBCExampleBase {
     @Test
     public void testSaveWithAddresses() throws Exception{
 
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-
         ArrayList<AddressDTO> addresses = new ArrayList<>();
 
-        assertNotNull(personDao);
         PersonDTO person = new PersonDTO();
         person.firstName="Pluto";
         person.lastName="Dog";
-        person.personId=1005;
 
         AddressDTO addressDTO = new AddressDTO();
-        addressDTO.personId=1005;
         addressDTO.emailAddress="pluto@example.com";
         addressDTO.city="Orlando";
         addressDTO.country="US";
         addresses.add(addressDTO);
 
         addressDTO = new AddressDTO();
-        addressDTO.personId=1005;
         addressDTO.emailAddress="pluto2@example.com";
         addressDTO.city="Orlando";
         addressDTO.country="US";
@@ -205,10 +176,10 @@ public class PersonDAOTest extends JDBCExampleBase {
         person.addresses=addresses;
 
 
-        personDao.save(person);
+        Long key = personDao.save(person);
 
-        PersonDTO expected =  personDao.findByPK(1005l);
-        assertEquals(1005,expected.personId);
+        PersonDTO expected =  personDao.findByPK(key);
+        assertEquals(key.longValue(),expected.personId);
         assertEquals("Pluto",expected.firstName);
         assertEquals("Dog",expected.lastName);
         assertEquals(2,expected.addresses.size());
@@ -236,10 +207,6 @@ public class PersonDAOTest extends JDBCExampleBase {
     @Test
     public void testUpdate() throws Exception {
 
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-
-        assertNotNull(personDao);
-
         PersonDTO person = new PersonDTO();
         person.firstName="Thomas";
         person.lastName="Cat";
@@ -251,14 +218,11 @@ public class PersonDAOTest extends JDBCExampleBase {
         assertEquals(1001,expected.personId);
         assertEquals("Thomas",expected.firstName);
         assertEquals("Cat",expected.lastName);
+        assertTrue(expected.addresses.toString(), expected.addresses.isEmpty());
     }
 
     @Test
     public void testUpdateWithAddress() throws Exception{
-
-        PersonDao personDao =  personDaoTracker.waitForService(3000);
-
-        assertNotNull(personDao);
 
         PersonDTO person = new PersonDTO();
         person.firstName="Jekyll";
@@ -297,10 +261,6 @@ public class PersonDAOTest extends JDBCExampleBase {
 
         try {
 
-            PersonDao personDao =  personDaoTracker.waitForService(3000);
-
-            assertNotNull(personDao);
-
             PersonDTO person = new PersonDTO();
             person.firstName="Rollback";
             person.lastName="Test";
@@ -326,11 +286,6 @@ public class PersonDAOTest extends JDBCExampleBase {
         catch (ScopedWorkException e) {
             try {
                 //Check the record does not exist
-                DataSourceFactory dataSourceFactory = (DataSourceFactory) 
-                        getService(DataSourceFactory.class, "(osgi.jdbc.driver.name=h2)");       
-
-                assertNotNull(dataSourceFactory);
-
                 Properties dsProps = new Properties();
                 dsProps.load(this.getClass().getResourceAsStream("/ds.properties"));
 
@@ -344,7 +299,7 @@ public class PersonDAOTest extends JDBCExampleBase {
                 assertNotNull(rs);
                 assertFalse(rs.next());
             }
-            catch (InvalidSyntaxException | IOException | SQLException e1) {
+            catch (IOException | SQLException e1) {
                 fail("Error During Rollback Test Check");
             }
             
@@ -361,20 +316,21 @@ public class PersonDAOTest extends JDBCExampleBase {
         Properties dsProps = new Properties();
         dsProps.load(this.getClass().getResourceAsStream("/ds.properties"));
 
-        Connection con = dataSourceFactory.createDataSource(dsProps).getConnection();
+        try (Connection con = dataSourceFactory.createDataSource(dsProps).getConnection()) {
+        	assertNotNull(con);
+        	Statement st = con.createStatement();
+        	st.execute("DROP TABLE IF EXISTS PERSONS");
+        	st.execute("DROP TABLE IF EXISTS PERSON_ADDRESSES");
+        }
 
-        assertNotNull(con);
-        Statement st = con.createStatement();
-        st.execute("DROP TABLE IF EXISTS PERSONS");
-        st.execute("DROP TABLE IF EXISTS PERSON_ADDRESSES");
 
         //Clean up 
         dataSourceFactory = null;
         configAdmin  = null;
 
-        if(localJDBCProviderConfig!= null){
-            localJDBCProviderConfig.delete();
-            localJDBCProviderConfig = null;
+        if(localJPAProviderConfig!= null){
+        	localJPAProviderConfig.delete();
+        	localJPAProviderConfig = null;
         }
 
         if(cmTracker != null){

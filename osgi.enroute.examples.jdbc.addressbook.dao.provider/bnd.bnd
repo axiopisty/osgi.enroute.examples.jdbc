@@ -7,20 +7,27 @@ Bundle-Version:					1.0.0.${tstamp}
 Bundle-Description: AddressBook Data Access Objects provider. Notice that this provider exports \
 	the API package.
 
+# This is needed due to Hibernate bug HHH-10742
+Import-Package: javassist.util.proxy,org.hibernate.proxy,*
+
 Private-Package: \
 	osgi.enroute.examples.jdbc.addressbook.dao.provider,\
-	osgi.enroute.examples.jdbc.addressbook.dao.participants
+	osgi.enroute.examples.jdbc.addressbook.dao.entities
 	
 -buildpath: \
 	osgi.enroute.base.api;version=1.0,\
 	org.osgi.service.jdbc,\
-	tx-control-provider-jdbc-local,\
+	org.osgi.service.jpa,\
+	tx-control-provider-jpa-local,\
 	tx-control-service-local
 	
 -testpath: \
 	osgi.enroute.junit.wrapper;version=4.12
 
--includeresource: {readme.md}
+-includeresource: {readme.md},\
+	persistence=persistence
+
+Meta-Persistence: persistence/persistence.xml
 
 
 -runrequires:  \

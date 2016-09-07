@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 public class JDBCExampleBase {
 
-    protected static final String FACTORY_PID_ARIES_TX_CONTROL_JDBC_LOCAL = "org.apache.aries.tx.control.jdbc.local";
+    protected static final String FACTORY_PID_ARIES_TX_CONTROL_JPA_LOCAL = "org.apache.aries.tx.control.jpa.local";
     
     final Logger LOGGER = LoggerFactory.getLogger(JDBCExampleBase.class);
     
@@ -30,7 +30,7 @@ public class JDBCExampleBase {
 
     protected  ConfigurationAdmin configAdmin;
 
-    protected  Configuration localJDBCProviderConfig;
+    protected  Configuration localJPAProviderConfig;
             
     public JDBCExampleBase() throws Exception {
        

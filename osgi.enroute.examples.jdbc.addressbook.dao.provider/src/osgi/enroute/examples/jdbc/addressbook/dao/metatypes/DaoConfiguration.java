@@ -1,6 +1,6 @@
 package osgi.enroute.examples.jdbc.addressbook.dao.metatypes;
 
-import org.osgi.service.jdbc.DataSourceFactory;
+import org.osgi.service.jpa.EntityManagerFactoryBuilder;
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 
@@ -11,7 +11,7 @@ public interface DaoConfiguration {
 
     @AttributeDefinition(
             name = "Transaction Resource Provider",
-            description = "The Resource Provider target for the transaction, typically the DataSource",
-            defaultValue ="("+DataSourceFactory.JDBC_DATASOURCE_NAME+"=addressBookDS)", required = true)
+            description = "The Resource Provider target for the transaction, typically the JPAEntityManagerProvider",
+            defaultValue ="("+EntityManagerFactoryBuilder.JPA_UNIT_NAME+"=addressBookPU)", required = true)
     String provider_target();
 }

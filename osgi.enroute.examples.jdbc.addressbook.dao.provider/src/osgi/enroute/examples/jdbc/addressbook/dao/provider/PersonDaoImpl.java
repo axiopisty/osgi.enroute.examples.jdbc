@@ -1,62 +1,52 @@
 package osgi.enroute.examples.jdbc.addressbook.dao.provider;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+import static java.util.Optional.ofNullable;
+import static java.util.stream.Collectors.toList;
+
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import javax.persistence.EntityManager;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.CriteriaQuery;
 
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
-import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.coordinator.Coordinator;
 import org.osgi.service.transaction.control.TransactionControl;
-import org.osgi.service.transaction.control.jdbc.JDBCConnectionProvider;
+import org.osgi.service.transaction.control.jpa.JPAEntityManagerProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import osgi.enroute.examples.jdbc.addressbook.dao.api.AddressDao;
 import osgi.enroute.examples.jdbc.addressbook.dao.api.PersonDao;
 import osgi.enroute.examples.jdbc.addressbook.dao.datatypes.AddressDTO;
 import osgi.enroute.examples.jdbc.addressbook.dao.datatypes.PersonDTO;
+import osgi.enroute.examples.jdbc.addressbook.dao.entities.Address;
+import osgi.enroute.examples.jdbc.addressbook.dao.entities.Person;
 
 /**
  * 
  */
 @Component(name = "osgi.enroute.examples.jdbc.addressbook.person.dao", service = PersonDao.class, configurationPid = "osgi.enroute.examples.jdbc.addressbook.dao")
-public class PersonDaoImpl implements PersonDao, PersonTable {
+public class PersonDaoImpl implements PersonDao {
 
 	private Logger logger = LoggerFactory.getLogger(PersonDaoImpl.class);
-
-	// Some cordinator names for better understanding
-	String ADDRESS_DAO_SAVE_COORDINATOR = "osgi.enroute.examples.jdbc.addressbook.save";
-	String ADDRESS_DAO_UPDATE_COORDINATOR = "osgi.enroute.examples.jdbc.addressbook.update";
 
 	@Reference
 	TransactionControl transactionControl;
 
 	@Reference(name="provider")
-	JDBCConnectionProvider jdbcConnectionProvider;
+	JPAEntityManagerProvider jpaEntityManagerProvider;
 
-	@Reference
-	Coordinator coordinator;
-
-	@Reference
-	AddressDao addressDao;
-
-	Connection connection;
+	EntityManager em;
 
 	@Activate
 	void start(Map<String, Object> props) throws SQLException {
 		try {
-			connection = jdbcConnectionProvider.getResource(transactionControl);
-			transactionControl.supports(() -> connection.prepareStatement(PersonTable.INIT).execute());
+			em = jpaEntityManagerProvider.getResource(transactionControl);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -67,17 +57,13 @@ public class PersonDaoImpl implements PersonDao, PersonTable {
 
 		List<PersonDTO> persons = transactionControl.notSupported(() -> {
 
-			List<PersonDTO> dbResults = new ArrayList<>();
-
-			ResultSet rs = connection.createStatement().executeQuery(SQL_SELECT_ALL_PERSONS);
-
-			while (rs.next()) {
-				PersonDTO personDTO = mapRecordToPerson(rs);
-				personDTO.addresses = addressDao.select(personDTO.personId);
-				dbResults.add(personDTO);
-			}
-
-			return dbResults;
+			CriteriaBuilder cb = em.getCriteriaBuilder();
+			CriteriaQuery<Person> query = cb.createQuery(Person.class);
+			query.from(Person.class);
+			
+			return em.createQuery(query).getResultList().stream()
+				.map(Person::toDTO)
+				.collect(toList());
 		});
 
 		return persons;
@@ -87,11 +73,14 @@ public class PersonDaoImpl implements PersonDao, PersonTable {
 	public void delete(Long primaryKey) {
 
 		transactionControl.required(() -> {
-			PreparedStatement pst = connection.prepareStatement(SQL_DELETE_PERSON_BY_PK);
-			pst.setLong(1, primaryKey);
-			pst.executeUpdate();
-			addressDao.delete(primaryKey);
-			logger.info("Deleted Person with ID : {}", primaryKey);
+			
+			Person person = em.find(Person.class, primaryKey);
+			if(person != null) {
+				em.remove(person);
+				logger.info("Deleted Person with ID : {}", primaryKey);
+			} else {
+				logger.warn("There was no Person with ID : {} to delete");
+			}
 			return null;
 		});
 	}
@@ -100,20 +89,9 @@ public class PersonDaoImpl implements PersonDao, PersonTable {
 	public PersonDTO findByPK(Long pk) {
 
 		PersonDTO person = transactionControl.supports(() -> {
-
-			PersonDTO personDTO = null;
-
-			PreparedStatement pst = connection.prepareStatement(SQL_SELECT_PERSON_BY_PK);
-			pst.setLong(1, pk);
-
-			ResultSet rs = pst.executeQuery();
-
-			if (rs.next()) {
-				personDTO = mapRecordToPerson(rs);
-				personDTO.addresses = addressDao.select(pk);
-			}
-
-			return personDTO;
+			return ofNullable(em.find(Person.class, pk))
+				.map(Person::toDTO)
+				.orElse(null);
 		});
 
 		return person;
@@ -124,42 +102,14 @@ public class PersonDaoImpl implements PersonDao, PersonTable {
 
 		long personPK = transactionControl.required(() -> {
 
-			PreparedStatement pst = connection.prepareStatement(SQL_INSERT_PERSON, Statement.RETURN_GENERATED_KEYS);
+			Person p = Person.fromDTO(data);
+			p.setPersonId(null);
+			em.persist(p);
+			em.flush();
+			
+			logger.info("Saved Person with ID : {}", p.getPersonId());
 
-			pst.setString(1, data.firstName);
-			pst.setString(2, data.lastName);
-
-			pst.executeUpdate();
-
-			AtomicLong genPersonId = new AtomicLong(data.personId);
-
-			if (genPersonId.get() <= 0) {
-				ResultSet genKeys = pst.getGeneratedKeys();
-
-				if (genKeys.next()) {
-					genPersonId.set(genKeys.getLong(1));
-				}
-			}
-
-			logger.info("Saved Person with ID : {}", genPersonId.get());
-
-			if (genPersonId.get() > 0) {
-				List<AddressDTO> addresses = data.addresses;
-
-				// START - COORDINATION
-				coordinator.begin(ADDRESS_DAO_SAVE_COORDINATOR, TimeUnit.MINUTES.toMillis(5));
-
-				addresses.stream().forEach(address -> {
-					address.personId = genPersonId.get();
-					addressDao.save(genPersonId.get(), address);
-				});
-
-				coordinator.peek().end();
-
-				// END - COORDINATION
-			}
-
-			return genPersonId.get();
+			return p.getPersonId();
 		});
 
 		return personPK;
@@ -170,49 +120,41 @@ public class PersonDaoImpl implements PersonDao, PersonTable {
 
 		transactionControl.required(() -> {
 
-			PreparedStatement pst = connection.prepareStatement(SQL_UPDATE_PERSON_BY_PK);
-			pst.setString(1, data.firstName);
-			pst.setString(2, data.lastName);
-			pst.setLong(3, data.personId);
-			pst.executeUpdate();
+			Map<String, AddressDTO> addresses = data.addresses.stream()
+					.collect(Collectors.toMap(a -> a.emailAddress, Function.identity()));
 
+			List<Address> list = em.createQuery("Select a from Address a where a.person.personId = :id", Address.class)
+				.setParameter("id", data.personId)
+				.getResultList();
+			
+			list.forEach(a -> {
+				AddressDTO dto = addresses.remove(a.getEmailAddress());
+				if(dto != null) {
+					a.setCity(dto.city);
+					a.setCountry(dto.country);
+				} else {
+					em.remove(a);
+				}
+			});
+			em.flush();
+			
+			Person p = em.find(Person.class, data.personId);
+			
+			if(p != null) {
+				p.setFirstName(data.firstName);
+				p.setLastName(data.lastName);
+				
+				addresses.values().forEach(dto -> {
+					Address a = Address.fromDTO(dto);
+					a.setPerson(p);
+					p.getAddresses().add(a);
+					em.persist(a);
+				});
+			}
+			
 			logger.info("Updated person : {}", data);
 
-			final long personId = data.personId;
-
-			List<AddressDTO> addresses = data.addresses;
-
-			// START - COORDINATION
-
-			coordinator.begin(ADDRESS_DAO_UPDATE_COORDINATOR, TimeUnit.MINUTES.toMillis(5));
-
-			addresses.stream().forEach(address -> addressDao.update(personId, address));
-
-			coordinator.peek().end();
-
-			// END - COORDINATION
 			return null;
 		});
 	}
-
-	protected PersonDTO mapRecordToPerson(ResultSet rs) throws SQLException {
-		PersonDTO personDTO = new PersonDTO();
-		personDTO.personId = rs.getLong(PERSON_ID);
-		personDTO.firstName = rs.getString(FIRST_NAME);
-		personDTO.lastName = rs.getString(LAST_NAME);
-		return personDTO;
-	}
-
-	@Deactivate
-	void stop() {
-		if (connection != null) {
-			try {
-				connection.close();
-			} catch (SQLException e) {
-				logger.error("Error closing connection", e);
-			}
-			connection = null;
-		}
-	}
-
 }

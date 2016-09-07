@@ -14,7 +14,7 @@ import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.ServiceReference;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.jdbc.DataSourceFactory;
-import org.osgi.service.transaction.control.jdbc.JDBCConnectionProvider;
+import org.osgi.service.transaction.control.jpa.JPAEntityManagerProvider;
 import org.osgi.util.tracker.ServiceTracker;
 
 import osgi.enroute.examples.jdbc.addressbook.dao.JDBCExampleBase;
@@ -24,7 +24,7 @@ public class BootstrapTest extends JDBCExampleBase {
 
     ServiceTracker<DataSourceFactory,DataSourceFactory> dsfTracker;
 
-    ServiceTracker<JDBCConnectionProvider,JDBCConnectionProvider> cpTracker;
+    ServiceTracker<JPAEntityManagerProvider,JPAEntityManagerProvider> cpTracker;
 
     public BootstrapTest() throws Exception {
         super();
@@ -47,14 +47,14 @@ public class BootstrapTest extends JDBCExampleBase {
         dsfTracker.open();
 
         Filter cpFilter =  FrameworkUtil.createFilter("(&("+
-                Constants.OBJECTCLASS+"="+JDBCConnectionProvider.class.getName()+")"
-                + "(dataSourceName=addressBookDS)"
+                Constants.OBJECTCLASS+"="+JPAEntityManagerProvider.class.getName()+")"
+                + "(osgi.unit.name=addressBookPU)"
                 +")");
         cpTracker = new ServiceTracker<>(context, cpFilter, null);
         cpTracker.open();
 
-        localJDBCProviderConfig = configAdmin.createFactoryConfiguration(FACTORY_PID_ARIES_TX_CONTROL_JDBC_LOCAL,null);
-        localJDBCProviderConfig.update((Hashtable)txServiceProps);
+        localJPAProviderConfig = configAdmin.createFactoryConfiguration(FACTORY_PID_ARIES_TX_CONTROL_JPA_LOCAL,null);
+        localJPAProviderConfig.update((Hashtable)txServiceProps);
 
     }
 
@@ -67,24 +67,24 @@ public class BootstrapTest extends JDBCExampleBase {
     }
 
     @Test
-    public void testJDBCConnectionProviderRegistered() throws Exception{
+    public void testJPAEntityManagerProviderRegistered() throws Exception{
 
-        JDBCConnectionProvider jdbcConnectionProvider =  cpTracker.waitForService(5000);
+        JPAEntityManagerProvider jdbcConnectionProvider =  cpTracker.waitForService(5000);
         assertNotNull(jdbcConnectionProvider);
 
-        ServiceReference<JDBCConnectionProvider>[] conProviderRefs =  cpTracker.getServiceReferences();
+        ServiceReference<JPAEntityManagerProvider>[] conProviderRefs =  cpTracker.getServiceReferences();
         assertNotNull(conProviderRefs);
         assertEquals(1, conProviderRefs.length);
-        ServiceReference<JDBCConnectionProvider> conProviderRef = conProviderRefs[0];
-        assertEquals("addressBookDS", conProviderRef.getProperty("dataSourceName"));
+        ServiceReference<JPAEntityManagerProvider> conProviderRef = conProviderRefs[0];
+        assertEquals("addressBookPU", conProviderRef.getProperty("osgi.unit.name"));
     }    
 
     @After
     public void tearDown() throws Exception{
        
-        if(localJDBCProviderConfig!= null){
-            localJDBCProviderConfig.delete();
-            localJDBCProviderConfig = null;
+        if(localJPAProviderConfig!= null){
+        	localJPAProviderConfig.delete();
+        	localJPAProviderConfig = null;
         }
 
         if(cmTracker != null){
